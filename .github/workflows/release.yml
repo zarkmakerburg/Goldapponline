@@ -1,37 +1,53 @@
-name: GoldApp Online release bundle
+name: GoldApp Online release
 
 on:
   push:
-    tags:
-      - 'v*-goldapp.*'
+    branches:
+      - main
+    paths:
+      - RELEASE_VERSION
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing GoldApp release tag to build
+        description: Existing GoldApp release tag to rebuild
         required: true
 
 permissions:
   contents: write
 
 jobs:
-  bundle:
+  release:
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve tag
-        id: tag
-        run: echo "name=${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
-
-      - name: Validate GoldApp release tag
-        env:
-          TAG: ${{ steps.tag.outputs.name }}
-        run: |
-          set -euo pipefail
-          echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-goldapp\.[0-9]+$'
-
-      - name: Checkout
+      - name: Checkout release source
         uses: actions/checkout@v5
         with:
-          ref: ${{ steps.tag.outputs.name }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.sha }}
+          fetch-depth: 0
+
+      - name: Resolve release tag and commit
+        id: release
+        env:
+          DISPATCH_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$DISPATCH_TAG" ]; then
+            TAG="$DISPATCH_TAG"
+          else
+            TAG="$(tr -d '[:space:]' < RELEASE_VERSION)"
+          fi
+
+          COMMIT="$(git rev-parse HEAD)"
+          CORE_VERSION="${TAG#v}"
+          CORE_VERSION="${CORE_VERSION%-goldapp.*}"
+          APP_VERSION="$(tr -d '[:space:]' < version)"
+
+          echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-goldapp\.[0-9]+$'
+          test "$CORE_VERSION" = "$APP_VERSION"
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -53,7 +69,8 @@ jobs:
       - name: Build and verify assets
         id: assets
         env:
-          TAG: ${{ steps.tag.outputs.name }}
+          TAG: ${{ steps.release.outputs.tag }}
+          COMMIT: ${{ steps.release.outputs.commit }}
         run: |
           set -euo pipefail
 
@@ -76,7 +93,7 @@ jobs:
 
           {
             echo "tag=${TAG}"
-            echo "commit=${GITHUB_SHA}"
+            echo "commit=${COMMIT}"
             echo
             cat "${BUNDLE}.sha256"
             cat "${INSTALLER}.sha256"
@@ -88,10 +105,30 @@ jobs:
           echo "installer_checksum=${INSTALLER}.sha256" >> "$GITHUB_OUTPUT"
           echo "manifest=${MANIFEST}" >> "$GITHUB_OUTPUT"
 
-      - name: Attach assets to release
+      - name: Create or verify GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.tag.outputs.name }}
+          TAG: ${{ steps.release.outputs.tag }}
+          COMMIT: ${{ steps.release.outputs.commit }}
+        run: |
+          set -euo pipefail
+
+          if git rev-parse "refs/tags/${TAG}^{commit}" >/dev/null 2>&1; then
+            TAG_COMMIT="$(git rev-parse "refs/tags/${TAG}^{commit}")"
+            if [ "$TAG_COMMIT" != "$COMMIT" ]; then
+              echo "Release tag ${TAG} already points to ${TAG_COMMIT}, expected ${COMMIT}" >&2
+              exit 1
+            fi
+          fi
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$COMMIT" --title "$TAG" --generate-notes
+          fi
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
           BUNDLE: ${{ steps.assets.outputs.bundle }}
           BUNDLE_CHECKSUM: ${{ steps.assets.outputs.bundle_checksum }}
           INSTALLER: ${{ steps.assets.outputs.installer }}
@@ -99,9 +136,6 @@ jobs:
           MANIFEST: ${{ steps.assets.outputs.manifest }}
         run: |
           set -euo pipefail
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --title "$TAG" --generate-notes
-          fi
           gh release upload "$TAG" \
             "$BUNDLE" "$BUNDLE_CHECKSUM" \
             "$INSTALLER" "$INSTALLER_CHECKSUM" \
