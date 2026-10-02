@@ -47,8 +47,9 @@ jobs:
         run: |
           set -euo pipefail
           grep -q 'GIT_REPO="zarkmakerburg/Goldapponline"' install.sh
-          grep -q 'raw.githubusercontent.com/zarkmakerburg/Goldapponline/main/install.sh' install.sh
-          if grep -q 'raw.githubusercontent.com/mahdiMGF2/mirzabot/main/install.sh' install.sh; then
+          grep -q 'GOLDAPP_UPDATE_REPO="zarkmakerburg/Goldapponline"' install.sh
+          grep -Fq 'raw.githubusercontent.com/${GOLDAPP_UPDATE_REPO}/${GOLDAPP_SELF_UPDATE_REF}/install.sh' install.sh
+          if grep -q 'raw.githubusercontent.com/mahdiMGF2/mirzabot' install.sh; then
             echo "Installer still auto-updates from upstream" >&2
             exit 1
           fi
