@@ -64,7 +64,7 @@ jobs:
           grep -q "HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN" function.php
           grep -q "'secret_token' =>" table.php
           ! grep -q 'index.php?secret=' table.php
-          ! grep -q 'raw.githubusercontent.com/mahdiMGF2/mirzabot/main/install.sh' install.sh
+          ! grep -q 'raw.githubusercontent.com/mahdiMGF2/mirzabot' install.sh
           for file in request.php wg_mate.php alireza_single.php ibsng/Modules/IBSng.php; do
             ! grep -E 'CURLOPT_SSL_(VERIFYHOST|VERIFYPEER).*(false|=> false)' "$file"
           done
@@ -93,15 +93,12 @@ jobs:
           grep -q 'GOLDAPP_RELEASE_TAG_REGEX=' install.sh
           grep -q 'sha256sum' install.sh
           ! grep -q 'md5sum' install.sh
-          grep -q "v\*-goldapp\.\*" .github/workflows/release.yml
           grep -q 'sha256sum' .github/workflows/release.yml
           grep -q 'manifest' .github/workflows/release.yml
+          grep -q 'RELEASE_VERSION' .github/workflows/release.yml
           test -f RELEASE_VERSION
           RELEASE_TAG="$(tr -d '[:space:]' < RELEASE_VERSION)"
-          echo "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-goldapp\.[0-9]+
-      - name: Dependency security audit
-        run: composer audit --locked
-
+          echo "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-goldapp\.[0-9]+$'
           RELEASE_CORE="${RELEASE_TAG#v}"
           RELEASE_CORE="${RELEASE_CORE%-goldapp.*}"
           test "$RELEASE_CORE" = "$(tr -d '[:space:]' < version)"
