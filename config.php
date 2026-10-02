@@ -2,6 +2,13 @@
 // This variable added for high load panels which their response time is long and bot can't communicate with online panel!
 // null for default settings
 $request_exec_timeout = null;
+
+// GoldApp security defaults for new installations.
+// Set to true only for a trusted panel that intentionally uses a self-signed TLS certificate.
+$allow_insecure_panel_tls = false;
+// Existing upgraded installations without this variable retain the legacy API-token fallback.
+// New installations keep the Bot API token separate from the GoldApp management API token.
+$allow_legacy_api_bot_token = false;
 $dbhost = '{database_url}';
 $dbname = '{database_name}';
 $usernamedb = '{username_db}';
