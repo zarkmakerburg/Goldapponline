@@ -129,7 +129,16 @@ function validate_telegram_init_data($rawData, string $botToken): array
     return $userData;
 }
 
+enforceJsonBodyLimit(131072);
 $rawInput = file_get_contents('php://input');
+
+if ($rawInput !== false && strlen($rawInput) > 131072) {
+    respond_json(413, [
+        'status' => false,
+        'msg' => 'Request body too large',
+        'token' => null,
+    ]);
+}
 
 if ($rawInput === false) {
     respond_json(400, [
@@ -269,6 +278,7 @@ try {
 }
 
 update('user', 'token', $randomString, 'id', $userId);
+update('user', 'token_expires_at', time() + 86400, 'id', $userId);
 
 respond_json(200, [
     'status' => true,

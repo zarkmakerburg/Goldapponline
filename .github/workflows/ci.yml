@@ -68,5 +68,21 @@ jobs:
             ! grep -E 'CURLOPT_SSL_(VERIFYHOST|VERIFYPEER).*(false|=> false)' "$file"
           done
 
+      - name: Web security regression checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'GOLDAPP_ADMIN_IDLE_TIMEOUT = 1800' panel/inc/config.php
+          grep -q 'GOLDAPP_ADMIN_ABSOLUTE_TIMEOUT = 43200' panel/inc/config.php
+          grep -q 'session_regenerate_id(true)' panel/inc/config.php
+          grep -q 'X-Frame-Options: DENY' panel/inc/config.php
+          grep -q 'Require all denied' panel/inc/.htaccess
+          grep -q 'config\\.php|security\\.php' .htaccess
+          grep -q 'hash\\.txt' api/.htaccess
+          grep -q 'request body too large' api/utils.php
+          grep -q 'token_expires_at' api/verify.php
+          grep -q 'Token expired' api/miniapp.php
+          ! grep -q 'dummy.hash.for.timing.attack.prevention' panel/login.php
+
       - name: Dependency security audit
         run: composer audit --locked

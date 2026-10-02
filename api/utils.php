@@ -8,6 +8,29 @@ if (isset($_SERVER['SCRIPT_FILENAME']) && realpath($_SERVER['SCRIPT_FILENAME']) 
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../function.php';
 
+function apiSecurityHeaders(): void
+{
+    if (headers_sent()) {
+        return;
+    }
+
+    header('Content-Type: application/json; charset=utf-8');
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: no-referrer');
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+}
+
+apiSecurityHeaders();
+
+function enforceJsonBodyLimit(int $maxBytes = 1048576): void
+{
+    $contentLength = $_SERVER['CONTENT_LENGTH'] ?? null;
+    if ($contentLength !== null && is_numeric($contentLength) && (int) $contentLength > $maxBytes) {
+        sendJsonResponse(false, 'request body too large', [], 413);
+    }
+}
+
 if (!function_exists('getallheaders')) {
     function getallheaders(): array
     {
@@ -122,12 +145,29 @@ function requireApiToken($headers)
 function hasAdminSession()
 {
     if (session_status() === PHP_SESSION_NONE) {
+        ini_set('session.use_strict_mode', '1');
         session_start();
     }
 
     if (empty($_SESSION['admin_user'])) {
         return false;
     }
+
+    $now = time();
+    $loginTime = (int) ($_SESSION['login_time'] ?? 0);
+    $lastActivity = (int) ($_SESSION['last_activity'] ?? $loginTime);
+
+    if (
+        $loginTime <= 0
+        || ($now - $loginTime) > 43200
+        || ($lastActivity > 0 && ($now - $lastActivity) > 1800)
+    ) {
+        $_SESSION = [];
+        session_destroy();
+        return false;
+    }
+
+    $_SESSION['last_activity'] = $now;
 
     try {
         $admin = select("admin", "*", "username", $_SESSION['admin_user'], "select");
@@ -166,11 +206,21 @@ function validateMethod($expected, $actual)
 
 function readJsonBody()
 {
+    enforceJsonBodyLimit();
+
     $raw = file_get_contents("php://input");
-    $data = $raw === false ? null : json_decode($raw, true);
+    if ($raw === false) {
+        sendJsonResponse(false, "data invalid", [], 400);
+    }
+
+    if (strlen($raw) > 1048576) {
+        sendJsonResponse(false, "request body too large", [], 413);
+    }
+
+    $data = json_decode($raw, true);
 
     if (!is_array($data)) {
-        sendJsonResponse(false, "data invalid", []);
+        sendJsonResponse(false, "data invalid", [], 400);
     }
 
     return sanitizeRecursive($data);
