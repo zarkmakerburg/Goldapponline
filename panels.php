@@ -1953,7 +1953,7 @@ class ManagePanel
             }
             return array(
                 'status' => true,
-                'data' => $modify
+                'msg' => $modify['msg'] ?? ''
             );
         }
     }
@@ -2446,6 +2446,7 @@ class ManagePanel
             }
         } elseif ($panel['type'] == "s_ui") {
             $data = array(
+                "enable" => true,
                 "volume" => $data_limit_new,
                 "expiry" => $time_new
             );
@@ -2592,6 +2593,7 @@ class ManagePanel
             );
         } elseif ($panel['type'] == "s_ui") {
             $data = array(
+                "enable" => true,
                 "volume" => $new_limit,
             );
         } elseif ($panel['type'] == "mirza_agent") {
@@ -2737,6 +2739,7 @@ class ManagePanel
             );
         } elseif ($panel['type'] == "s_ui") {
             $data = array(
+                "enable" => true,
                 "expiry" => $new_limit,
             );
         } elseif ($panel['type'] == "mirza_agent") {
