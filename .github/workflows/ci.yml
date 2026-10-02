@@ -96,6 +96,15 @@ jobs:
           grep -q "v\*-goldapp\.\*" .github/workflows/release.yml
           grep -q 'sha256sum' .github/workflows/release.yml
           grep -q 'manifest' .github/workflows/release.yml
+          test -f RELEASE_VERSION
+          RELEASE_TAG="$(tr -d '[:space:]' < RELEASE_VERSION)"
+          echo "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-goldapp\.[0-9]+
+      - name: Dependency security audit
+        run: composer audit --locked
+
+          RELEASE_CORE="${RELEASE_TAG#v}"
+          RELEASE_CORE="${RELEASE_CORE%-goldapp.*}"
+          test "$RELEASE_CORE" = "$(tr -d '[:space:]' < version)"
 
       - name: Dependency security audit
         run: composer audit --locked
