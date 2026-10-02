@@ -1,5 +1,7 @@
 <?php namespace radiusApi\Modules;
 
+require_once dirname(__DIR__, 2) . '/security.php';
+
 
 class IBSng
 {
@@ -741,8 +743,8 @@ class IBSng
         curl_setopt($this->handler, CURLOPT_RETURNTRANSFER, TRUE);
 //        curl_setopt($this->handler, CURLOPT_FOLLOWLOCATION, TRUE);
         curl_setopt($this->handler, CURLOPT_USERAGENT, $this->agent);
-        curl_setopt($this->handler, CURLOPT_SSL_VERIFYHOST, false);
-        curl_setopt($this->handler, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($this->handler, CURLOPT_SSL_VERIFYHOST, \goldappPanelTlsVerifyHost());
+        curl_setopt($this->handler, CURLOPT_SSL_VERIFYPEER, \goldappPanelTlsVerifyPeer());
         curl_setopt($this->handler, CURLOPT_COOKIEFILE, $this->getCookie());
         curl_setopt($this->handler, CURLOPT_COOKIEJAR, $this->getCookie());
         $output = curl_exec($this->handler);
