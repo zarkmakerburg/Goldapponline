@@ -63,3 +63,16 @@ Legacy user rows that do not yet have an expiry timestamp remain temporarily com
 
 JSON management API requests are limited to 1 MiB. Telegram Mini App verification payloads are limited to 128 KiB. These limits are intended to reduce accidental and malicious memory pressure before JSON parsing.
 
+## Management API token storage
+
+GoldApp management API credentials are one-way stored:
+
+- `/token2` generates 32 random bytes (256 bits) and returns the raw token once to the administrator;
+- disk storage contains only `sha256:<digest>` with file mode `0600`;
+- API requests hash the presented token and compare digests with `hash_equals`;
+- pre-phase-5 plaintext `api/hash.txt` files remain compatible and are automatically converted to digest storage after the first successful authentication;
+- an invalid request never triggers migration;
+- the Telegram bot-token compatibility fallback remains governed separately by `$allow_legacy_api_bot_token`.
+
+Because these API tokens have high cryptographic entropy, SHA-256 digest storage prevents straightforward recovery of the original credential if the token file is disclosed.
+

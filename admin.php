@@ -5148,8 +5148,15 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     outtypepanel($typepanel['type'], $textbotlang['Admin']['algorithmExtend']['saveData']);
     step('home', $from_id);
 } elseif ($text == "/token2") {
-    $token = bin2hex(random_bytes(16));
-    file_put_contents('api/hash.txt', $token);
+    require_once __DIR__ . '/api_token.php';
+
+    $token = bin2hex(random_bytes(32));
+    if (!goldappStoreApiToken($token)) {
+        error_log('GoldApp API token: failed to store generated token digest.');
+        sendmessage($from_id, 'API token generation failed. Please try again.', null, 'HTML');
+        return;
+    }
+
     sendmessage($from_id, sprintf($textbotlang['Admin']['api']['token'], $token), null, 'HTML');
     $apiDocsUrl = "https://$domainhostsEscaped/api/index.html";
     sendmessage($from_id, sprintf($textbotlang['Admin']['api']['docsLink'], $apiDocsUrl), null, 'HTML');

@@ -7,6 +7,7 @@ if (isset($_SERVER['SCRIPT_FILENAME']) && realpath($_SERVER['SCRIPT_FILENAME']) 
 
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../function.php';
+require_once __DIR__ . '/../api_token.php';
 
 function apiSecurityHeaders(): void
 {
@@ -85,51 +86,41 @@ function headerValue($headers, $name)
     return null;
 }
 
-function apiTokens()
+function validateToken($headers)
 {
     global $APIKEY, $allow_legacy_api_bot_token;
 
-    $tokens = [];
-
-    $hashFile = __DIR__ . '/hash.txt';
-    if (is_file($hashFile)) {
-        $fileToken = trim((string) file_get_contents($hashFile));
-        if ($fileToken !== '') {
-            $tokens[] = $fileToken;
-        }
-    }
-
-    // Configs created before GoldApp security phase 2 do not contain this
-    // setting, so they retain the historical fallback until the operator
-    // creates a dedicated API token. Fresh installs disable the fallback.
-    $legacyFallback = isset($allow_legacy_api_bot_token)
-        ? (bool) $allow_legacy_api_bot_token
-        : true;
-
-    if (empty($tokens) && $legacyFallback && isset($APIKEY) && $APIKEY !== '') {
-        static $warned = false;
-        if (!$warned) {
-            error_log('GoldApp security warning: management API is using the Telegram bot token fallback; generate a dedicated API token with /token2.');
-            $warned = true;
-        }
-        $tokens[] = (string) $APIKEY;
-    }
-
-    return $tokens;
-}
-
-function validateToken($headers)
-{
     $provided = headerValue($headers, 'Token');
     if ($provided === null) {
         return false;
     }
 
     $provided = trim((string) $provided);
-    foreach (apiTokens() as $validToken) {
-        if (hash_equals($validToken, $provided)) {
-            return true;
+    if ($provided === '') {
+        return false;
+    }
+
+    // A configured dedicated token always takes precedence. Its plaintext is
+    // never returned to application code; only the provided token is hashed
+    // and compared with the on-disk digest.
+    if (goldappHasDedicatedApiToken()) {
+        return goldappValidateDedicatedApiToken($provided);
+    }
+
+    // Configs created before GoldApp security phase 2 may still fall back to
+    // the Telegram Bot API token until the operator creates /token2.
+    $legacyFallback = isset($allow_legacy_api_bot_token)
+        ? (bool) $allow_legacy_api_bot_token
+        : true;
+
+    if ($legacyFallback && isset($APIKEY) && $APIKEY !== '') {
+        static $warned = false;
+        if (!$warned) {
+            error_log('GoldApp security warning: management API is using the Telegram bot token fallback; generate a dedicated API token with /token2.');
+            $warned = true;
         }
+
+        return hash_equals((string) $APIKEY, $provided);
     }
 
     return false;
