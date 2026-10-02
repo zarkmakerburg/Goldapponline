@@ -145,12 +145,29 @@ function requireApiToken($headers)
 function hasAdminSession()
 {
     if (session_status() === PHP_SESSION_NONE) {
+        ini_set('session.use_strict_mode', '1');
         session_start();
     }
 
     if (empty($_SESSION['admin_user'])) {
         return false;
     }
+
+    $now = time();
+    $loginTime = (int) ($_SESSION['login_time'] ?? 0);
+    $lastActivity = (int) ($_SESSION['last_activity'] ?? $loginTime);
+
+    if (
+        $loginTime <= 0
+        || ($now - $loginTime) > 43200
+        || ($lastActivity > 0 && ($now - $lastActivity) > 1800)
+    ) {
+        $_SESSION = [];
+        session_destroy();
+        return false;
+    }
+
+    $_SESSION['last_activity'] = $now;
 
     try {
         $admin = select("admin", "*", "username", $_SESSION['admin_user'], "select");
