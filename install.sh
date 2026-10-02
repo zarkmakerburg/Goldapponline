@@ -218,39 +218,144 @@ _link_mirza() {
     chmod +x "$link" "$goldapp_link" 2>/dev/null
 }
 
-# Self-update: every run, fetch the latest script from GitHub, validate it,
-# install it to /root/install.sh, link it into /usr/local/bin, and re-exec.
+# Self-update source policy.
+# Stable/auto prefers the newest release tag. The main branch is used only
+# when beta/main is explicitly selected, or for first-time bootstrap when no
+# stable tag can be discovered yet.
+GOLDAPP_UPDATE_REPO="zarkmakerburg/Goldapponline"
+GOLDAPP_UPDATE_CHANNEL_DEFAULT="${GOLDAPP_UPDATE_CHANNEL:-auto}"
+
+_self_update_arg_value() {
+    local wanted="$1"
+    shift
+    while [ "$#" -gt 0 ]; do
+        if [ "$1" = "$wanted" ] && [ "$#" -ge 2 ]; then
+            printf '%s' "$2"
+            return 0
+        fi
+        shift
+    done
+    return 1
+}
+
+_self_update_latest_tag() {
+    local tags
+    tags=$(curl -fsSL --max-time 8 "https://api.github.com/repos/${GOLDAPP_UPDATE_REPO}/tags" 2>/dev/null) || return 1
+    [ -n "$tags" ] || return 1
+
+    if command -v jq >/dev/null 2>&1; then
+        echo "$tags" | jq -r '.[].name' 2>/dev/null | grep -v '^null$' | sort -V | tail -1
+    else
+        echo "$tags" \
+            | grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]+"' \
+            | sed -E 's/.*"([^"]+)".*/\1/' \
+            | sort -V \
+            | tail -1
+    fi
+}
+
+_self_update_resolve_source() {
+    local master_path="$1"
+    shift
+
+    local requested_version requested_channel latest_tag ref
+    requested_version=$(_self_update_arg_value --version "$@" 2>/dev/null || true)
+    requested_channel=$(_self_update_arg_value --channel "$@" 2>/dev/null || true)
+    [ -n "$requested_channel" ] || requested_channel="$GOLDAPP_UPDATE_CHANNEL_DEFAULT"
+
+    if [ -n "$requested_version" ]; then
+        ref="$requested_version"
+        GOLDAPP_SELF_UPDATE_SOURCE="release:$requested_version"
+    else
+        case "$requested_channel" in
+            beta|main)
+                ref="main"
+                GOLDAPP_SELF_UPDATE_SOURCE="beta:main"
+                ;;
+            release|stable|latest)
+                latest_tag=$(_self_update_latest_tag || true)
+                if [ -z "$latest_tag" ]; then
+                    if [ ! -f "$master_path" ]; then
+                        echo -e "\e[33mNo stable release tag found; using main only for first-time bootstrap.\033[0m"
+                        ref="main"
+                        GOLDAPP_SELF_UPDATE_SOURCE="bootstrap:main"
+                    else
+                        GOLDAPP_SELF_UPDATE_SOURCE="stable:unavailable"
+                        return 2
+                    fi
+                else
+                    ref="$latest_tag"
+                    GOLDAPP_SELF_UPDATE_SOURCE="release:$latest_tag"
+                fi
+                ;;
+            auto|"")
+                latest_tag=$(_self_update_latest_tag || true)
+                if [ -n "$latest_tag" ]; then
+                    ref="$latest_tag"
+                    GOLDAPP_SELF_UPDATE_SOURCE="release:$latest_tag"
+                elif [ ! -f "$master_path" ]; then
+                    ref="main"
+                    GOLDAPP_SELF_UPDATE_SOURCE="bootstrap:main"
+                else
+                    GOLDAPP_SELF_UPDATE_SOURCE="auto:no-release"
+                    return 2
+                fi
+                ;;
+            *)
+                echo -e "\e[91mUnknown self-update channel: $requested_channel\033[0m"
+                return 1
+                ;;
+        esac
+    fi
+
+    GOLDAPP_SELF_UPDATE_URL="https://raw.githubusercontent.com/${GOLDAPP_UPDATE_REPO}/${ref}/install.sh"
+    return 0
+}
+
+# Self-update the installer without silently crossing release channels.
 function self_update_script() {
     local MASTER_PATH="/root/install.sh"
     local BIN_LINK="/usr/local/bin/mirza"
-    local URL="https://raw.githubusercontent.com/zarkmakerburg/Goldapponline/main/install.sh"
-    local TEMP_FILE="/tmp/mirzabot_update.sh"
+    local TEMP_FILE="/tmp/goldapp_update.sh"
+    local resolve_status=0
 
-    # Make sure DNS works before reaching GitHub
+    GOLDAPP_SELF_UPDATE_URL=""
+    GOLDAPP_SELF_UPDATE_SOURCE=""
+
+    _self_update_resolve_source "$MASTER_PATH" "$@" || resolve_status=$?
+    if [ "$resolve_status" -eq 2 ]; then
+        echo -e "\e[33mNo stable installer update is available; keeping the current installer.\033[0m"
+        [ -f "$MASTER_PATH" ] && _link_mirza "$MASTER_PATH" "$BIN_LINK"
+        return 0
+    elif [ "$resolve_status" -ne 0 ] || [ -z "$GOLDAPP_SELF_UPDATE_URL" ]; then
+        echo -e "\e[91mCould not resolve a trusted installer update source.\033[0m"
+        [ -f "$MASTER_PATH" ] && _link_mirza "$MASTER_PATH" "$BIN_LINK"
+        return 1
+    fi
+
     ensure_dns >/dev/null 2>&1
 
-    echo -e "\e[33mChecking for the latest script version...\033[0m"
+    echo -e "\e[33mChecking installer update (${GOLDAPP_SELF_UPDATE_SOURCE})...\033[0m"
     rm -f "$TEMP_FILE"
-    curl -fsSL --max-time 15 -o "$TEMP_FILE" "$URL" 2>/dev/null \
-        || wget -q -O "$TEMP_FILE" "$URL" 2>/dev/null
+    curl -fsSL --max-time 15 -o "$TEMP_FILE" "$GOLDAPP_SELF_UPDATE_URL" 2>/dev/null \
+        || wget -q -O "$TEMP_FILE" "$GOLDAPP_SELF_UPDATE_URL" 2>/dev/null
 
-    # Normalize line endings so a CRLF download can never break bash
     [ -f "$TEMP_FILE" ] && sed -i 's/\r$//' "$TEMP_FILE"
 
-    # Validate the download is a complete, valid bash script (not a 404/HTML/partial)
     local valid=0
     if [ -s "$TEMP_FILE" ] \
        && head -n1 "$TEMP_FILE" | grep -q '^#!/bin/bash' \
        && grep -q 'process_arguments' "$TEMP_FILE" \
+       && grep -q 'GOLDAPP_UPDATE_REPO="zarkmakerburg/Goldapponline"' "$TEMP_FILE" \
        && bash -n "$TEMP_FILE" 2>/dev/null; then
         valid=1
     fi
 
     if [ "$valid" -ne 1 ]; then
-        echo -e "\e[91mWarning: could not fetch a valid update (offline / bad download). Using current version.\033[0m"
+        echo -e "\e[91mWarning: installer update failed validation; keeping the current version.\033[0m"
         rm -f "$TEMP_FILE"
         if [ ! -f "$MASTER_PATH" ]; then
-            echo -e "\e[91mCritical: cannot install the script for the first time without internet.\033[0m"
+            echo -e "\e[91mCritical: no trusted installer is available for first-time setup.\033[0m"
             exit 1
         fi
         _link_mirza "$MASTER_PATH" "$BIN_LINK"
@@ -259,30 +364,36 @@ function self_update_script() {
 
     local LOCAL_HASH REMOTE_HASH
     if [ -f "$MASTER_PATH" ]; then
-        LOCAL_HASH=$(md5sum "$MASTER_PATH" | awk '{print $1}')
+        LOCAL_HASH=$(sha256sum "$MASTER_PATH" | awk '{print $1}')
     else
         LOCAL_HASH="not_installed"
     fi
-    REMOTE_HASH=$(md5sum "$TEMP_FILE" | awk '{print $1}')
+    REMOTE_HASH=$(sha256sum "$TEMP_FILE" | awk '{print $1}')
 
     if [ "$LOCAL_HASH" != "$REMOTE_HASH" ]; then
         if [ "$LOCAL_HASH" = "not_installed" ]; then
-            echo -e "\e[32mInstalling script to the system...\033[0m"
+            echo -e "\e[32mInstalling GoldApp installer...\033[0m"
         else
-            echo -e "\e[32mNew version found - updating...\033[0m"
+            echo -e "\e[32mTrusted installer update found - applying...\033[0m"
         fi
-        install -m 0755 "$TEMP_FILE" "$MASTER_PATH" 2>/dev/null || { mv "$TEMP_FILE" "$MASTER_PATH"; chmod +x "$MASTER_PATH"; }
+
+        install -m 0755 "$TEMP_FILE" "$MASTER_PATH" 2>/dev/null \
+            || { mv "$TEMP_FILE" "$MASTER_PATH"; chmod +x "$MASTER_PATH"; }
         rm -f "$TEMP_FILE"
+
+        printf '%s\n' "$GOLDAPP_SELF_UPDATE_SOURCE" > /root/.goldapp_installer_source
+        chmod 600 /root/.goldapp_installer_source 2>/dev/null
+
         _link_mirza "$MASTER_PATH" "$BIN_LINK"
-        echo -e "\e[32mUpdated. Restarting with the latest version...\033[0m"
-        sleep 1
+        echo -e "\e[32mInstaller updated from ${GOLDAPP_SELF_UPDATE_SOURCE}. Restarting...\033[0m"
         exec bash "$MASTER_PATH" "$@"
     fi
 
-    # Already up to date - just make sure it is linked under /usr/local/bin
     rm -f "$TEMP_FILE"
     _link_mirza "$MASTER_PATH" "$BIN_LINK"
-    echo -e "\e[32mScript is up to date.\033[0m"
+    printf '%s\n' "$GOLDAPP_SELF_UPDATE_SOURCE" > /root/.goldapp_installer_source
+    chmod 600 /root/.goldapp_installer_source 2>/dev/null
+    echo -e "\e[32mInstaller is up to date (${GOLDAPP_SELF_UPDATE_SOURCE}).\033[0m"
 }
 self_update_script "$@"
 
