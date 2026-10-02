@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -83,6 +83,19 @@ jobs:
           grep -q 'token_expires_at' api/verify.php
           grep -q 'Token expired' api/miniapp.php
           ! grep -q 'dummy.hash.for.timing.attack.prevention' panel/login.php
+
+      - name: Release safety regression checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'GOLDAPP_UPDATE_REPO="zarkmakerburg/Goldapponline"' install.sh
+          grep -q 'GOLDAPP_UPDATE_CHANNEL_DEFAULT=' install.sh
+          grep -q "sha256sum" install.sh
+          ! grep -q "md5sum" install.sh
+          grep -q -- "-goldapp" install.sh
+          grep -q "v\*-goldapp\.\*" .github/workflows/release.yml
+          grep -q "sha256sum" .github/workflows/release.yml
+          grep -q "manifest" .github/workflows/release.yml
 
       - name: Dependency security audit
         run: composer audit --locked
