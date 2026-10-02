@@ -1,0 +1,58 @@
+name: GoldApp CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'goldapp/**'
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: curl, mbstring, zip, gd, dom, simplexml, xmlwriter, xmlreader, fileinfo, iconv, bcmath
+          tools: composer
+
+      - name: Validate Composer metadata
+        run: composer validate --no-check-publish
+
+      - name: Install dependencies
+        run: composer install --no-dev --no-interaction --no-progress --prefer-dist
+
+      - name: PHP syntax check
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -type f -name '*.php' -not -path './vendor/*' -print0 |
+            xargs -0 -n1 php -l
+
+      - name: Installer syntax check
+        run: bash -n install.sh
+
+      - name: Verify GoldApp source-of-truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'GIT_REPO="zarkmakerburg/Goldapponline"' install.sh
+          grep -q 'raw.githubusercontent.com/zarkmakerburg/Goldapponline/main/install.sh' install.sh
+          if grep -q 'raw.githubusercontent.com/mahdiMGF2/mirzabot/main/install.sh' install.sh; then
+            echo "Installer still auto-updates from upstream" >&2
+            exit 1
+          fi
+          grep -q '/usr/local/bin/goldapp' install.sh
+
+      - name: Dependency security audit
+        run: composer audit --locked
