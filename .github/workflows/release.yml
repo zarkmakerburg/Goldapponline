@@ -3,11 +3,11 @@ name: GoldApp Online release bundle
 on:
   push:
     tags:
-      - '*'
+      - 'v*-goldapp.*'
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag to build the hosting bundle for
+        description: Existing GoldApp release tag to build
         required: true
 
 permissions:
@@ -21,8 +21,15 @@ jobs:
         id: tag
         run: echo "name=${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
 
+      - name: Validate GoldApp release tag
+        env:
+          TAG: ${{ steps.tag.outputs.name }}
+        run: |
+          set -euo pipefail
+          echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-goldapp\.[0-9]+$'
+
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ steps.tag.outputs.name }}
 
@@ -36,27 +43,67 @@ jobs:
       - name: Install dependencies
         run: composer install --no-dev --no-interaction --no-progress --optimize-autoloader --classmap-authoritative
 
-      - name: Verify autoloader
-        run: test -f vendor/autoload.php
+      - name: Verify release inputs
+        run: |
+          set -euo pipefail
+          test -f vendor/autoload.php
+          bash -n install.sh
+          php -l index.php
 
-      - name: Build bundle
-        id: bundle
+      - name: Build and verify assets
+        id: assets
         env:
           TAG: ${{ steps.tag.outputs.name }}
         run: |
-          FILE="goldapponline-host-${TAG}.zip"
-          zip -r -q "../${FILE}" . -x '.git/*' '.github/*' 'graphify-out/*' '.gitignore' 'install.sh'
-          mv "../${FILE}" .
-          echo "file=${FILE}" >> "$GITHUB_OUTPUT"
-          unzip -l "${FILE}" | tail -1
+          set -euo pipefail
 
-      - name: Attach bundle to release
+          BUNDLE="goldapponline-host-${TAG}.zip"
+          INSTALLER="goldapp-installer-${TAG}.sh"
+          MANIFEST="goldapponline-release-${TAG}.manifest"
+
+          zip -r -q "../${BUNDLE}" . \
+            -x '.git/*' '.github/*' 'graphify-out/*' '.gitignore' 'install.sh'
+          mv "../${BUNDLE}" .
+
+          cp install.sh "${INSTALLER}"
+          chmod 0755 "${INSTALLER}"
+
+          unzip -t "${BUNDLE}"
+          bash -n "${INSTALLER}"
+
+          sha256sum "${BUNDLE}" > "${BUNDLE}.sha256"
+          sha256sum "${INSTALLER}" > "${INSTALLER}.sha256"
+
+          {
+            echo "tag=${TAG}"
+            echo "commit=${GITHUB_SHA}"
+            echo
+            cat "${BUNDLE}.sha256"
+            cat "${INSTALLER}.sha256"
+          } > "${MANIFEST}"
+
+          echo "bundle=${BUNDLE}" >> "$GITHUB_OUTPUT"
+          echo "bundle_checksum=${BUNDLE}.sha256" >> "$GITHUB_OUTPUT"
+          echo "installer=${INSTALLER}" >> "$GITHUB_OUTPUT"
+          echo "installer_checksum=${INSTALLER}.sha256" >> "$GITHUB_OUTPUT"
+          echo "manifest=${MANIFEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Attach assets to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.tag.outputs.name }}
-          FILE: ${{ steps.bundle.outputs.file }}
+          BUNDLE: ${{ steps.assets.outputs.bundle }}
+          BUNDLE_CHECKSUM: ${{ steps.assets.outputs.bundle_checksum }}
+          INSTALLER: ${{ steps.assets.outputs.installer }}
+          INSTALLER_CHECKSUM: ${{ steps.assets.outputs.installer_checksum }}
+          MANIFEST: ${{ steps.assets.outputs.manifest }}
         run: |
+          set -euo pipefail
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --title "$TAG" --generate-notes
           fi
-          gh release upload "$TAG" "$FILE" --clobber
+          gh release upload "$TAG" \
+            "$BUNDLE" "$BUNDLE_CHECKSUM" \
+            "$INSTALLER" "$INSTALLER_CHECKSUM" \
+            "$MANIFEST" \
+            --clobber
