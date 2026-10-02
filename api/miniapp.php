@@ -32,7 +32,14 @@ if ($method == "GET") {
         'time_days' => isset($_GET['time_days']) && is_string($_GET['time_days']) ? $_GET['time_days'] : 0
     );
 } elseif ($method == "POST") {
-    $data = json_decode(file_get_contents("php://input"), true);
+    enforceJsonBodyLimit();
+    $rawBody = file_get_contents("php://input");
+    if ($rawBody === false || strlen($rawBody) > 1048576) {
+        http_response_code(413);
+        echo json_encode(['status' => false, 'msg' => 'Request body too large', 'obj' => []]);
+        return;
+    }
+    $data = json_decode($rawBody, true);
 }
 if (!is_array($data)) {
     echo json_encode([
@@ -67,6 +74,23 @@ if (!$usercheck || !is_string($usercheck['token']) || !hash_equals($usercheck['t
     ]);
     return;
 }
+
+$tokenExpiresAt = isset($usercheck['token_expires_at']) && is_numeric($usercheck['token_expires_at'])
+    ? (int) $usercheck['token_expires_at']
+    : 0;
+
+// Tokens issued by phase 3 expire after 24 hours. Older rows without an
+// expiry remain valid during the migration window and are replaced next time
+// the user completes Telegram Web App verification.
+if ($tokenExpiresAt > 0 && $tokenExpiresAt < time()) {
+    http_response_code(401);
+    echo json_encode([
+        'status' => false,
+        'msg' => "Token expired",
+    ]);
+    return;
+}
+
 $data['user_id'] = $usercheck['id'];
 
 if ($usercheck['User_Status'] == "block") {
