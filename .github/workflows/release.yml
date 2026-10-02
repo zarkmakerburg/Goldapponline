@@ -3,7 +3,7 @@ name: GoldApp Online release bundle
 on:
   push:
     tags:
-      - '*'
+      - 'v*-goldapp.*'
   workflow_dispatch:
     inputs:
       tag:
@@ -22,7 +22,7 @@ jobs:
         run: echo "name=${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ steps.tag.outputs.name }}
 
@@ -39,16 +39,48 @@ jobs:
       - name: Verify autoloader
         run: test -f vendor/autoload.php
 
-      - name: Build bundle
+      - name: Validate GoldApp release tag
+        env:
+          TAG: ${{ steps.tag.outputs.name }}
+        run: |
+          set -euo pipefail
+          echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-goldapp\.[0-9]+
+
+      - name: Attach bundle to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.name }}
+          FILE: ${{ steps.bundle.outputs.file }}
+          CHECKSUM: ${{ steps.bundle.outputs.checksum }}
+          MANIFEST: ${{ steps.bundle.outputs.manifest }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "$TAG" --generate-notes
+          fi
+          gh release upload "$TAG" "$FILE" "$CHECKSUM" "$MANIFEST" --clobber
+
+
+      - name: Build and verify bundle
         id: bundle
         env:
           TAG: ${{ steps.tag.outputs.name }}
         run: |
+          set -euo pipefail
           FILE="goldapponline-host-${TAG}.zip"
           zip -r -q "../${FILE}" . -x '.git/*' '.github/*' 'graphify-out/*' '.gitignore' 'install.sh'
           mv "../${FILE}" .
+          unzip -t "${FILE}"
+          sha256sum "${FILE}" > "${FILE}.sha256"
+          {
+            echo "tag=${TAG}"
+            echo "commit=${GITHUB_SHA}"
+            echo "bundle=${FILE}"
+            cat "${FILE}.sha256"
+          } > "goldapponline-release-${TAG}.manifest"
           echo "file=${FILE}" >> "$GITHUB_OUTPUT"
-          unzip -l "${FILE}" | tail -1
+          echo "checksum=${FILE}.sha256" >> "$GITHUB_OUTPUT"
+          echo "manifest=goldapponline-release-${TAG}.manifest" >> "$GITHUB_OUTPUT"
 
       - name: Attach bundle to release
         env:
