@@ -42,3 +42,10 @@ Each GitHub release workflow publishes:
 - a release manifest containing the tag, commit SHA, and checksums.
 
 The release workflow refuses tags outside the GoldApp naming convention.
+
+## Controlled release trigger
+
+`RELEASE_VERSION` is the release trigger for the default branch. A reviewed change to that file causes the release workflow to build from the exact merged commit, validate that the core version matches the root `version` file, create the Git tag on that commit, create the GitHub Release, and upload the integrity assets.
+
+This keeps tag creation inside the tested release workflow instead of relying on an unreviewed local command.
+
