@@ -40,7 +40,7 @@ Options -Indexes
     </IfModule>
 </FilesMatch>
 
-<FilesMatch "^(config\.php|security\.php)$">
+<FilesMatch "^(config\.php|security\.php|api_token\.php)$">
     Require all denied
     <IfModule !mod_authz_core.c>
         Order deny,allow
