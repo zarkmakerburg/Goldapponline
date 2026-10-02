@@ -1,6 +1,7 @@
 <?php
 require_once 'vendor/autoload.php';
 require 'config.php';
+require_once __DIR__ . '/security.php';
 ini_set('error_log', 'error_log');
 
 use Endroid\QrCode\Builder\Builder;
@@ -923,8 +924,8 @@ function outputlink($text)
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT_MS, ($GLOBALS['request_exec_timeout'] ?? null) ?: 10000);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, goldappPanelTlsVerifyHost());
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, goldappPanelTlsVerifyPeer());
     $userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
     curl_setopt($ch, CURLOPT_USERAGENT, $userAgent);
     $response = curl_exec($ch);
@@ -1691,9 +1692,18 @@ function isClientIpInRange($clientIp, $lowerBound, $upperBound)
 
 function webhookSecretMatches($secret)
 {
-    $received = $_GET['secret'] ?? '';
+    // Telegram's supported secret_token is delivered in this header and avoids
+    // leaking the secret through URLs, reverse-proxy logs, analytics, or referrers.
+    $headerSecret = $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'] ?? '';
+    if (is_string($headerSecret) && $headerSecret !== '') {
+        return hash_equals($secret, $headerSecret);
+    }
 
-    return is_string($received) && $received !== '' && hash_equals($secret, $received);
+    // Transitional compatibility for webhooks registered by older GoldApp/Mirza releases.
+    $legacyQuerySecret = $_GET['secret'] ?? '';
+    return is_string($legacyQuerySecret)
+        && $legacyQuerySecret !== ''
+        && hash_equals($secret, $legacyQuerySecret);
 }
 
 function ensureWebhookSecret()
@@ -1714,7 +1724,8 @@ function ensureWebhookSecret()
     }
 
     telegram('setWebhook', [
-        'url' => "https://$domainhosts/index.php?secret=$secret",
+        'url' => "https://$domainhosts/index.php",
+        'secret_token' => $secret,
     ]);
 
     return ['secret' => $secret, 'created' => true];
@@ -1725,7 +1736,8 @@ function setAgentWebhook($token, $id_user, $username, $secret)
     global $domainhosts;
 
     return telegram('setWebhook', [
-        'url' => "https://$domainhosts/vpnbot/{$id_user}{$username}/index.php?secret=$secret",
+        'url' => "https://$domainhosts/vpnbot/{$id_user}{$username}/index.php",
+        'secret_token' => $secret,
     ], $token);
 }
 
