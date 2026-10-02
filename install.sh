@@ -2755,6 +2755,8 @@ try { \$pdo = new PDO(\$dsn, \$usernamedb, \$passworddb, \$options); } catch (\P
 \$adminnumber = '${OLD_ADMIN_ID}';
 \$domainhosts = '${DOMAIN_NAME}';
 \$usernamebot = '${OLD_BOT_NAME}';
+\$allow_insecure_panel_tls = false;
+\$allow_legacy_api_bot_token = false;
 ?>
 EOF
     chown -R www-data:www-data "$NEW_BOT_DIR"
@@ -2812,8 +2814,9 @@ EOF
     ensure_cron || echo -e "\033[33mWarning: cron is not installed or not running.\033[0m"
     sed -i 's/\r$//' /root/install.sh
     chmod +x /root/install.sh
-    rm -f /usr/local/bin/mirza
+    rm -f /usr/local/bin/mirza /usr/local/bin/goldapp
     ln -sf /root/install.sh /usr/local/bin/mirza
+    ln -sf /root/install.sh /usr/local/bin/goldapp
     clear
     echo -e "\033[32m====================================================\033[0m"
     echo -e "\033[32m       MIGRATION SUCCESSFUL (Free -> Pro)           \033[0m"

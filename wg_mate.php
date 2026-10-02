@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/security.php';
 function request_wgmate($location, $method, $path, $body = null)
 {
     $panel = select("marzban_panel", "*", "name_panel", $location, "select");
@@ -7,8 +8,8 @@ function request_wgmate($location, $method, $path, $body = null)
         CURLOPT_CUSTOMREQUEST => $method,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT_MS => ($GLOBALS['request_exec_timeout'] ?? null) ?: 30000,
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_SSL_VERIFYHOST => false,
+        CURLOPT_SSL_VERIFYPEER => goldappPanelTlsVerifyPeer(),
+        CURLOPT_SSL_VERIFYHOST => goldappPanelTlsVerifyHost(),
         CURLOPT_HTTPHEADER => array(
             'Accept: application/json',
             'Content-Type: application/json',

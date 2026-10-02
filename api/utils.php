@@ -64,7 +64,7 @@ function headerValue($headers, $name)
 
 function apiTokens()
 {
-    global $APIKEY;
+    global $APIKEY, $allow_legacy_api_bot_token;
 
     $tokens = [];
 
@@ -76,7 +76,19 @@ function apiTokens()
         }
     }
 
-    if (empty($tokens) && isset($APIKEY) && $APIKEY !== '') {
+    // Configs created before GoldApp security phase 2 do not contain this
+    // setting, so they retain the historical fallback until the operator
+    // creates a dedicated API token. Fresh installs disable the fallback.
+    $legacyFallback = isset($allow_legacy_api_bot_token)
+        ? (bool) $allow_legacy_api_bot_token
+        : true;
+
+    if (empty($tokens) && $legacyFallback && isset($APIKEY) && $APIKEY !== '') {
+        static $warned = false;
+        if (!$warned) {
+            error_log('GoldApp security warning: management API is using the Telegram bot token fallback; generate a dedicated API token with /token2.');
+            $warned = true;
+        }
         $tokens[] = (string) $APIKEY;
     }
 

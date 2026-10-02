@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once __DIR__ . '/security.php';
 
 class CurlRequest {
     private $url;
@@ -41,7 +42,8 @@ class CurlRequest {
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, strtoupper($method));
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT_MS, $this->timeout);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, goldappPanelTlsVerifyPeer());
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, goldappPanelTlsVerifyHost());
 
         $finalHeaders = $this->prepareHeaders();
         if (!empty($finalHeaders)) {

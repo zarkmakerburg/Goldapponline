@@ -54,5 +54,19 @@ jobs:
           fi
           grep -q '/usr/local/bin/goldapp' install.sh
 
+      - name: Security regression checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '\$allow_insecure_panel_tls = false;' config.php
+          grep -q '\$allow_legacy_api_bot_token = false;' config.php
+          grep -q "HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN" function.php
+          grep -q "'secret_token' =>" table.php
+          ! grep -q 'index.php?secret=' table.php
+          ! grep -q 'raw.githubusercontent.com/mahdiMGF2/mirzabot/main/install.sh' install.sh
+          for file in request.php wg_mate.php alireza_single.php ibsng/Modules/IBSng.php; do
+            ! grep -E 'CURLOPT_SSL_(VERIFYHOST|VERIFYPEER).*(false|=> false)' "$file"
+          done
+
       - name: Dependency security audit
         run: composer audit --locked

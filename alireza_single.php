@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 require_once 'request.php';
+require_once __DIR__ . '/security.php';
 ini_set('error_log', 'error_log');
 function alirezaCookiePath($code_panel)
 {
@@ -70,8 +71,8 @@ function get_clinetsalireza($username, $namepanel)
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_ENCODING => '',
         CURLOPT_MAXREDIRS => 10,
-        CURLOPT_SSL_VERIFYHOST => false,
-        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => goldappPanelTlsVerifyHost(),
+        CURLOPT_SSL_VERIFYPEER => goldappPanelTlsVerifyPeer(),
         CURLOPT_TIMEOUT_MS => ($GLOBALS['request_exec_timeout'] ?? null) ?: 4000,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
@@ -208,8 +209,8 @@ function get_onlineclialireza($name_panel, $username)
         CURLOPT_ENCODING => '',
         CURLOPT_MAXREDIRS => 10,
         CURLOPT_TIMEOUT => 0,
-        CURLOPT_SSL_VERIFYHOST => false,
-        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => goldappPanelTlsVerifyHost(),
+        CURLOPT_SSL_VERIFYPEER => goldappPanelTlsVerifyPeer(),
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
         CURLOPT_CUSTOMREQUEST => 'POST',
