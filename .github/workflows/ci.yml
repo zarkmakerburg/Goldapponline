@@ -103,5 +103,20 @@ jobs:
           RELEASE_CORE="${RELEASE_CORE%-goldapp.*}"
           test "$RELEASE_CORE" = "$(tr -d '[:space:]' < version)"
 
+      - name: API token storage tests
+        run: php tests/api_token_storage_test.php
+
+      - name: Secret storage regression checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'random_bytes(32)' admin.php
+          grep -q "goldappStoreApiToken" admin.php
+          ! grep -Fq "file_put_contents('api/hash.txt'" admin.php
+          grep -q "sha256:" api_token.php
+          grep -q "goldappValidateDedicatedApiToken" api/utils.php
+          grep -q 'api_token\\.php' .htaccess
+          grep -q 'hash\\.txt' api/.htaccess
+
       - name: Dependency security audit
         run: composer audit --locked
