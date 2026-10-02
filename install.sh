@@ -218,39 +218,141 @@ _link_mirza() {
     chmod +x "$link" "$goldapp_link" 2>/dev/null
 }
 
-# Self-update: every run, fetch the latest script from GitHub, validate it,
-# install it to /root/install.sh, link it into /usr/local/bin, and re-exec.
+# GoldApp installer self-update policy.
+# Stable channels use only GoldApp release tags. The main branch is used only
+# for explicit beta/main requests or first-time bootstrap before a release exists.
+GOLDAPP_UPDATE_REPO="zarkmakerburg/Goldapponline"
+GOLDAPP_RELEASE_TAG_REGEX='^v[0-9]+\.[0-9]+\.[0-9]+-goldapp\.[0-9]+$'
+
+_self_update_arg_value() {
+    local wanted="$1"
+    shift
+    while [ "$#" -gt 0 ]; do
+        if [ "$1" = "$wanted" ] && [ "$#" -ge 2 ]; then
+            printf '%s' "$2"
+            return 0
+        fi
+        shift
+    done
+    return 1
+}
+
+_self_update_latest_tag() {
+    local tags
+    tags=$(curl -fsSL --max-time 8 "https://api.github.com/repos/${GOLDAPP_UPDATE_REPO}/tags" 2>/dev/null) || return 1
+    [ -n "$tags" ] || return 1
+
+    if command -v jq >/dev/null 2>&1; then
+        echo "$tags" | jq -r '.[].name' 2>/dev/null \
+            | grep -E "$GOLDAPP_RELEASE_TAG_REGEX" \
+            | sort -V | tail -1
+    else
+        echo "$tags" \
+            | grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]+"' \
+            | sed -E 's/.*"([^"]+)".*/\1/' \
+            | grep -E "$GOLDAPP_RELEASE_TAG_REGEX" \
+            | sort -V | tail -1
+    fi
+}
+
+_resolve_self_update_ref() {
+    local master_path="$1"
+    shift
+    local requested_version requested_channel latest_tag
+
+    requested_version=$(_self_update_arg_value --version "$@" 2>/dev/null || true)
+    requested_channel=$(_self_update_arg_value --channel "$@" 2>/dev/null || true)
+    [ -n "$requested_channel" ] || requested_channel="${GOLDAPP_UPDATE_CHANNEL:-auto}"
+
+    if [ -n "$requested_version" ]; then
+        if ! echo "$requested_version" | grep -Eq "$GOLDAPP_RELEASE_TAG_REGEX"; then
+            echo -e "\e[91mInvalid GoldApp release tag: $requested_version\033[0m"
+            return 1
+        fi
+        GOLDAPP_SELF_UPDATE_REF="$requested_version"
+        GOLDAPP_SELF_UPDATE_SOURCE="release:$requested_version"
+        return 0
+    fi
+
+    case "$requested_channel" in
+        beta|main)
+            GOLDAPP_SELF_UPDATE_REF="main"
+            GOLDAPP_SELF_UPDATE_SOURCE="beta:main"
+            return 0
+            ;;
+        release|stable|latest)
+            latest_tag=$(_self_update_latest_tag || true)
+            [ -n "$latest_tag" ] || return 2
+            GOLDAPP_SELF_UPDATE_REF="$latest_tag"
+            GOLDAPP_SELF_UPDATE_SOURCE="release:$latest_tag"
+            return 0
+            ;;
+        auto|"")
+            latest_tag=$(_self_update_latest_tag || true)
+            if [ -n "$latest_tag" ]; then
+                GOLDAPP_SELF_UPDATE_REF="$latest_tag"
+                GOLDAPP_SELF_UPDATE_SOURCE="release:$latest_tag"
+                return 0
+            fi
+            if [ ! -f "$master_path" ]; then
+                GOLDAPP_SELF_UPDATE_REF="main"
+                GOLDAPP_SELF_UPDATE_SOURCE="bootstrap:main"
+                return 0
+            fi
+            return 2
+            ;;
+        *)
+            echo -e "\e[91mUnknown self-update channel: $requested_channel\033[0m"
+            return 1
+            ;;
+    esac
+}
+
 function self_update_script() {
     local MASTER_PATH="/root/install.sh"
     local BIN_LINK="/usr/local/bin/mirza"
-    local URL="https://raw.githubusercontent.com/zarkmakerburg/Goldapponline/main/install.sh"
-    local TEMP_FILE="/tmp/mirzabot_update.sh"
+    local TEMP_FILE="/tmp/goldapp_update.sh"
+    local resolve_status=0
 
-    # Make sure DNS works before reaching GitHub
+    GOLDAPP_SELF_UPDATE_REF=""
+    GOLDAPP_SELF_UPDATE_SOURCE=""
+
+    _resolve_self_update_ref "$MASTER_PATH" "$@" || resolve_status=$?
+    if [ "$resolve_status" -eq 2 ]; then
+        echo -e "\e[33mNo GoldApp stable installer release is available; keeping the current installer.\033[0m"
+        [ -f "$MASTER_PATH" ] && _link_mirza "$MASTER_PATH" "$BIN_LINK"
+        return 0
+    elif [ "$resolve_status" -ne 0 ] || [ -z "$GOLDAPP_SELF_UPDATE_REF" ]; then
+        echo -e "\e[91mCould not resolve a trusted GoldApp installer source.\033[0m"
+        [ -f "$MASTER_PATH" ] && _link_mirza "$MASTER_PATH" "$BIN_LINK"
+        return 1
+    fi
+
+    local URL="https://raw.githubusercontent.com/${GOLDAPP_UPDATE_REPO}/${GOLDAPP_SELF_UPDATE_REF}/install.sh"
+
     ensure_dns >/dev/null 2>&1
+    echo -e "\e[33mChecking installer update (${GOLDAPP_SELF_UPDATE_SOURCE})...\033[0m"
 
-    echo -e "\e[33mChecking for the latest script version...\033[0m"
     rm -f "$TEMP_FILE"
     curl -fsSL --max-time 15 -o "$TEMP_FILE" "$URL" 2>/dev/null \
         || wget -q -O "$TEMP_FILE" "$URL" 2>/dev/null
 
-    # Normalize line endings so a CRLF download can never break bash
     [ -f "$TEMP_FILE" ] && sed -i 's/\r$//' "$TEMP_FILE"
 
-    # Validate the download is a complete, valid bash script (not a 404/HTML/partial)
     local valid=0
     if [ -s "$TEMP_FILE" ] \
        && head -n1 "$TEMP_FILE" | grep -q '^#!/bin/bash' \
        && grep -q 'process_arguments' "$TEMP_FILE" \
+       && grep -q 'GOLDAPP_UPDATE_REPO="zarkmakerburg/Goldapponline"' "$TEMP_FILE" \
        && bash -n "$TEMP_FILE" 2>/dev/null; then
         valid=1
     fi
 
     if [ "$valid" -ne 1 ]; then
-        echo -e "\e[91mWarning: could not fetch a valid update (offline / bad download). Using current version.\033[0m"
+        echo -e "\e[91mWarning: installer update failed validation; keeping the current version.\033[0m"
         rm -f "$TEMP_FILE"
         if [ ! -f "$MASTER_PATH" ]; then
-            echo -e "\e[91mCritical: cannot install the script for the first time without internet.\033[0m"
+            echo -e "\e[91mCritical: no valid GoldApp installer is available for first-time setup.\033[0m"
             exit 1
         fi
         _link_mirza "$MASTER_PATH" "$BIN_LINK"
@@ -259,30 +361,28 @@ function self_update_script() {
 
     local LOCAL_HASH REMOTE_HASH
     if [ -f "$MASTER_PATH" ]; then
-        LOCAL_HASH=$(md5sum "$MASTER_PATH" | awk '{print $1}')
+        LOCAL_HASH=$(sha256sum "$MASTER_PATH" | awk '{print $1}')
     else
         LOCAL_HASH="not_installed"
     fi
-    REMOTE_HASH=$(md5sum "$TEMP_FILE" | awk '{print $1}')
+    REMOTE_HASH=$(sha256sum "$TEMP_FILE" | awk '{print $1}')
 
     if [ "$LOCAL_HASH" != "$REMOTE_HASH" ]; then
-        if [ "$LOCAL_HASH" = "not_installed" ]; then
-            echo -e "\e[32mInstalling script to the system...\033[0m"
-        else
-            echo -e "\e[32mNew version found - updating...\033[0m"
-        fi
-        install -m 0755 "$TEMP_FILE" "$MASTER_PATH" 2>/dev/null || { mv "$TEMP_FILE" "$MASTER_PATH"; chmod +x "$MASTER_PATH"; }
+        install -m 0755 "$TEMP_FILE" "$MASTER_PATH" 2>/dev/null \
+            || { mv "$TEMP_FILE" "$MASTER_PATH"; chmod +x "$MASTER_PATH"; }
         rm -f "$TEMP_FILE"
+        printf '%s\n' "$GOLDAPP_SELF_UPDATE_SOURCE" > /root/.goldapp_installer_source
+        chmod 600 /root/.goldapp_installer_source 2>/dev/null
         _link_mirza "$MASTER_PATH" "$BIN_LINK"
-        echo -e "\e[32mUpdated. Restarting with the latest version...\033[0m"
-        sleep 1
+        echo -e "\e[32mInstaller updated from ${GOLDAPP_SELF_UPDATE_SOURCE}. Restarting...\033[0m"
         exec bash "$MASTER_PATH" "$@"
     fi
 
-    # Already up to date - just make sure it is linked under /usr/local/bin
     rm -f "$TEMP_FILE"
+    printf '%s\n' "$GOLDAPP_SELF_UPDATE_SOURCE" > /root/.goldapp_installer_source
+    chmod 600 /root/.goldapp_installer_source 2>/dev/null
     _link_mirza "$MASTER_PATH" "$BIN_LINK"
-    echo -e "\e[32mScript is up to date.\033[0m"
+    echo -e "\e[32mInstaller is up to date (${GOLDAPP_SELF_UPDATE_SOURCE}).\033[0m"
 }
 self_update_script "$@"
 
@@ -767,36 +867,50 @@ get_installed_version() {
     fi
 }
 
-# Get latest version (newest git tag) from GitHub, cached for 1 hour
+# Get latest GoldApp release tag from GitHub, cached for 1 hour.
 get_latest_version() {
     if [ -f "$LATEST_CACHE" ] && [ $(( $(date +%s) - $(stat -c %Y "$LATEST_CACHE" 2>/dev/null || echo 0) )) -lt 3600 ]; then
         cat "$LATEST_CACHE"
         return
     fi
+
     local tags v
     tags=$(curl -fsSL --max-time 6 "https://api.github.com/repos/${GIT_REPO}/tags" 2>/dev/null)
     if [ -n "$tags" ]; then
         if command -v jq >/dev/null 2>&1; then
-            v=$(echo "$tags" | jq -r '.[].name' 2>/dev/null | sort -V | tail -1)
+            v=$(echo "$tags" | jq -r '.[].name' 2>/dev/null \
+                | grep -E "$GOLDAPP_RELEASE_TAG_REGEX" \
+                | sort -V | tail -1)
         else
-            v=$(echo "$tags" | grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]+"' | sed -E 's/.*"([^"]+)".*/\1/' | sort -V | tail -1)
+            v=$(echo "$tags" \
+                | grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]+"' \
+                | sed -E 's/.*"([^"]+)".*/\1/' \
+                | grep -E "$GOLDAPP_RELEASE_TAG_REGEX" \
+                | sort -V | tail -1)
         fi
     fi
+
     if [ -n "$v" ]; then
         echo "$v" > "$LATEST_CACHE"
         echo "$v"
     fi
 }
 
-# Print all release tags, newest first (one per line)
 list_tags_desc() {
     local tags
     tags=$(curl -fsSL --max-time 8 "https://api.github.com/repos/${GIT_REPO}/tags" 2>/dev/null)
     [ -z "$tags" ] && return 1
+
     if command -v jq >/dev/null 2>&1; then
-        echo "$tags" | jq -r '.[].name' 2>/dev/null | sort -Vr
+        echo "$tags" | jq -r '.[].name' 2>/dev/null \
+            | grep -E "$GOLDAPP_RELEASE_TAG_REGEX" \
+            | sort -Vr
     else
-        echo "$tags" | grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]+"' | sed -E 's/.*"([^"]+)".*/\1/' | sort -Vr
+        echo "$tags" \
+            | grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]+"' \
+            | sed -E 's/.*"([^"]+)".*/\1/' \
+            | grep -E "$GOLDAPP_RELEASE_TAG_REGEX" \
+            | sort -Vr
     fi
 }
 
@@ -823,10 +937,20 @@ choose_source() {
     if [ -n "$ARG_CHANNEL" ]; then
         case "$ARG_CHANNEL" in
             beta|main)      SRC_ZIP_URL="$beta"; SRC_LABEL="Beta (main)"; return 0 ;;
-            release|auto|latest|stable)
+            release|latest|stable)
                 local l; l=$(get_latest_version)
-                if [ -n "$l" ]; then SRC_ZIP_URL="${tagbase}/${l}.zip"; SRC_LABEL="Release ${l}";
-                else SRC_ZIP_URL="$beta"; SRC_LABEL="Beta (main)"; fi
+                if [ -n "$l" ]; then
+                    SRC_ZIP_URL="${tagbase}/${l}.zip"; SRC_LABEL="Release ${l}"; return 0
+                fi
+                echo -e "    ${C_BAD}●${CR} ${C_BAD}No GoldApp stable release is available.${CR}"
+                return 1 ;;
+            auto)
+                local l; l=$(get_latest_version)
+                if [ -n "$l" ]; then
+                    SRC_ZIP_URL="${tagbase}/${l}.zip"; SRC_LABEL="Release ${l}"
+                else
+                    SRC_ZIP_URL="$beta"; SRC_LABEL="Bootstrap/Beta (main)"
+                fi
                 return 0 ;;
             *) echo -e "    ${C_BAD}Unknown channel: ${ARG_CHANNEL}${CR}"; return 1 ;;
         esac

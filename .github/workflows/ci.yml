@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -47,8 +47,9 @@ jobs:
         run: |
           set -euo pipefail
           grep -q 'GIT_REPO="zarkmakerburg/Goldapponline"' install.sh
-          grep -q 'raw.githubusercontent.com/zarkmakerburg/Goldapponline/main/install.sh' install.sh
-          if grep -q 'raw.githubusercontent.com/mahdiMGF2/mirzabot/main/install.sh' install.sh; then
+          grep -q 'GOLDAPP_UPDATE_REPO="zarkmakerburg/Goldapponline"' install.sh
+          grep -Fq 'raw.githubusercontent.com/${GOLDAPP_UPDATE_REPO}/${GOLDAPP_SELF_UPDATE_REF}/install.sh' install.sh
+          if grep -q 'raw.githubusercontent.com/mahdiMGF2/mirzabot' install.sh; then
             echo "Installer still auto-updates from upstream" >&2
             exit 1
           fi
@@ -83,6 +84,18 @@ jobs:
           grep -q 'token_expires_at' api/verify.php
           grep -q 'Token expired' api/miniapp.php
           ! grep -q 'dummy.hash.for.timing.attack.prevention' panel/login.php
+
+      - name: Release safety regression checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'GOLDAPP_UPDATE_REPO="zarkmakerburg/Goldapponline"' install.sh
+          grep -q 'GOLDAPP_RELEASE_TAG_REGEX=' install.sh
+          grep -q 'sha256sum' install.sh
+          ! grep -q 'md5sum' install.sh
+          grep -q "v\*-goldapp\.\*" .github/workflows/release.yml
+          grep -q 'sha256sum' .github/workflows/release.yml
+          grep -q 'manifest' .github/workflows/release.yml
 
       - name: Dependency security audit
         run: composer audit --locked
