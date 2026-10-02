@@ -41,3 +41,25 @@ Newly registered webhooks use Telegram's `secret_token` mechanism. GoldApp tempo
 ## Reporting
 
 Do not include bot tokens, API tokens, panel credentials, database credentials, webhook secrets, cookies, or subscription credentials in public security reports.
+
+## Admin panel sessions
+
+GoldApp admin sessions are intentionally short-lived:
+
+- idle timeout: 30 minutes;
+- absolute session lifetime: 12 hours;
+- session ID regeneration interval: 15 minutes;
+- logout clears both server-side session state and the session cookie.
+
+The panel sends defensive browser headers including frame denial, MIME sniffing protection, no-referrer policy, restricted browser permissions, and no-store caching.
+
+## Mini App bearer tokens
+
+Tokens issued by the Telegram Web App verification endpoint now receive a 24-hour expiry timestamp. Mini App requests reject phase-3 tokens after expiry.
+
+Legacy user rows that do not yet have an expiry timestamp remain temporarily compatible. The next successful Telegram Web App verification replaces the token and writes an expiry time.
+
+## Request limits
+
+JSON management API requests are limited to 1 MiB. Telegram Mini App verification payloads are limited to 128 KiB. These limits are intended to reduce accidental and malicious memory pressure before JSON parsing.
+
