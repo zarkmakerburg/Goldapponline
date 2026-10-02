@@ -170,7 +170,7 @@ _drule()  { printf "  ${C_BORDER}%s${CR}\n" "$(_repeat "━" "$UI_W")"; }
 banner()  {
     echo
     _drule
-    printf "  ${C_OK}▌${CR} ${C_TITLE}MIRZA${CR}  ${C_DIM}— VPN Subscription Management${CR}\n"
+    printf "  ${C_OK}▌${CR} ${C_TITLE}GOLDAPP ONLINE${CR}  ${C_DIM}— VPN Subscription Management${CR}\n"
     _drule
 }
 # Menu item row: [n] label  (left-aligned, no right border)
@@ -205,14 +205,17 @@ ensure_dns() {
     return 1
 }
 
-# Ensure /usr/local/bin/mirza points at the master script
+# Keep the legacy /usr/local/bin/mirza entrypoint for backwards compatibility
+# and expose GoldApp Online through /usr/local/bin/goldapp.
 _link_mirza() {
     local master="$1" link="$2"
+    local goldapp_link="/usr/local/bin/goldapp"
     chmod +x "$master" 2>/dev/null
     if [ ! -e "$link" ] || [ "$(readlink -f "$link" 2>/dev/null)" != "$(readlink -f "$master" 2>/dev/null)" ]; then
         ln -sf "$master" "$link"
     fi
-    chmod +x "$link" 2>/dev/null
+    ln -sf "$master" "$goldapp_link"
+    chmod +x "$link" "$goldapp_link" 2>/dev/null
 }
 
 # Self-update: every run, fetch the latest script from GitHub, validate it,
@@ -220,7 +223,7 @@ _link_mirza() {
 function self_update_script() {
     local MASTER_PATH="/root/install.sh"
     local BIN_LINK="/usr/local/bin/mirza"
-    local URL="https://raw.githubusercontent.com/mahdiMGF2/mirzabot/main/install.sh"
+    local URL="https://raw.githubusercontent.com/zarkmakerburg/Goldapponline/main/install.sh"
     local TEMP_FILE="/tmp/mirzabot_update.sh"
 
     # Make sure DNS works before reaching GitHub
@@ -286,7 +289,7 @@ self_update_script "$@"
 # ── Repo / paths ─────────────────────────────────────────────
 BOT_DIR_DEFAULT="/var/www/html/mirzaprobotconfig"
 CONFIG_FILE_DEFAULT="$BOT_DIR_DEFAULT/config.php"
-GIT_REPO="mahdiMGF2/mirzabot"
+GIT_REPO="zarkmakerburg/Goldapponline"
 LATEST_CACHE="/tmp/.mirza_latest_version"
 IP_CACHE="/tmp/.mirza_server_ip"
 
@@ -915,8 +918,8 @@ version_section() {
     else
         _kv "Latest" "$(_dot warn) ${C_DIM}unknown (offline)${CR}"
     fi
-    _kv "Channel" "${C_DIM}t.me/mirzapanel${CR}"
-    _kv "Group" "${C_DIM}t.me/mirzapanelgroup${CR}"
+    _kv "Repository" "${C_DIM}github.com/zarkmakerburg/Goldapponline${CR}"
+    _kv "Upstream" "${C_DIM}github.com/mahdiMGF2/mirzabot${CR}"
 }
 
 bot_section() {
@@ -2720,7 +2723,7 @@ function migrate_to_pro() {
     NEW_BOT_DIR="/var/www/html/mirzaprobotconfig"
     rm -rf "$OLD_BOT_DIR"
     mkdir -p "$NEW_BOT_DIR"
-    ZIP_URL="https://github.com/mahdiMGF2/mirzabot/archive/refs/heads/main.zip"
+    ZIP_URL="https://github.com/zarkmakerburg/Goldapponline/archive/refs/heads/main.zip"
     TEMP_DIR="/tmp/mirzabot_mig"
     mkdir -p "$TEMP_DIR"
     run_step "Downloading Mirza source" "wget -q -O '$TEMP_DIR/bot.zip' '$ZIP_URL'" \
