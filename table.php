@@ -7,5 +7,6 @@ global $domainhosts;
 $webhookSecret = ensureWebhookSecret();
 
 telegram('setWebhook', [
-    'url' => "https://$domainhosts/index.php?secret={$webhookSecret['secret']}",
+    'url' => "https://$domainhosts/index.php",
+    'secret_token' => $webhookSecret['secret'],
 ]);
