@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $admin = select("admin", "*", "username", $username, "select");
 
-    $dummyHash = '$2y$10$dummy.hash.for.timing.attack.prevention.xxxxxxxxxxxxxxxx';
+    $dummyHash = '$2y$12$dqM1fjpzFFyN/IP11p1eReRKd5EamB9boy8.zvr72wARj5uI4M0Ha';
     $storedHash = $admin ? (string) $admin['password'] : $dummyHash;
 
     $isCorrect = false;
@@ -47,6 +47,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       session_regenerate_id(true);
       $_SESSION['admin_user'] = $admin['username'];
       $_SESSION['login_time'] = time();
+      $_SESSION['last_activity'] = time();
+      $_SESSION['session_regenerated_at'] = time();
       flash('success', $textbotlang['panel']['loginWelcomeBack'] . $admin['username']);
       header('Location: index.php');
       exit;
@@ -73,12 +75,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <div class="auth">
     <aside class="auth-aside">
       <div class="auth-mark">
-        <div class="dot">M</div>
+        <div class="dot">G</div>
         <span><?= $textbotlang['panel']['loginHeading'] ?></span>
       </div>
       <div class="auth-quote">
         <h2><?= $textbotlang['panel']['loginSubtitle'] ?> <a style="color:#a8dafd !important  "
-            href="https://github.com/mahdiMGF2/mirzabot"><?= $textbotlang['panel']['loginUsernameLabel'] ?></a>
+            href="https://github.com/zarkmakerburg/Goldapponline"><?= $textbotlang['panel']['loginUsernameLabel'] ?></a>
           <?= $textbotlang['panel']['loginUsernamePlaceholder'] ?></h2>
         <cite><?= $textbotlang['panel']['loginPasswordLabel'] ?></cite>
       </div>
