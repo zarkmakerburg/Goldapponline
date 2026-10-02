@@ -39,3 +39,17 @@ Options -Indexes
         Deny from all
     </IfModule>
 </FilesMatch>
+
+<FilesMatch "^(config\.php|security\.php)$">
+    Require all denied
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "no-referrer"
+    Header always set X-Frame-Options "SAMEORIGIN"
+</IfModule>
